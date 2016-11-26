@@ -6,6 +6,7 @@ import MySQLdb
 import logging
 import logging.config
 import datetime
+import threading
 
 
 class Log:
@@ -15,6 +16,7 @@ class Log:
 class Config:
 
     def __init__(self, filename="find-tweets.cfg", logger=None):
+        self.filename = filename
         config = ConfigParser.SafeConfigParser({'mysql_port': 3306})
         try:
             with open(filename) as f:
@@ -72,6 +74,10 @@ class Config:
         except ConfigParser.NoOptionError:
             Log.logs.critical("Missing db_name in 'mysql' section in config file!")
 
+    def check_updates(self, config_change):
+        # watch config file
+        config_change.set()
+
 
 class SearchStream(tweepy.StreamListener):
 
@@ -91,12 +97,20 @@ class SearchStream(tweepy.StreamListener):
             return False
 
 
-def TwitterSearch(config):
+def twitter_search(config, config_change):
     listener = SearchStream()
     oauth = tweepy.OAuthHandler(config.consumer_token, config.consumer_secret)
     oauth.set_access_token = (config.access_token, config.access_token_secret)
     stream = tweepy.Stream(auth=auth, listener=listener)
-    stream.filter(track=config.search_terms)
+    Log.logs.info("Starting twitter stream")
+    stream.filter(track=config.search_terms, async=True)
+    while True:
+        config_change.wait()
+        Log.logs.info("Config change detected!")
+        Log.logs.debug("New search terms: {}".format(config.search_terms))
+        stream.disconnect()
+        sleep(20)
+        stream.filter(track=config.search_terms, async=True)
 
 
 class MySQL:
@@ -130,3 +144,7 @@ if __name__ == "__main__":
         log.logs.critical("Logging config file not found: {}".format(args.logconfig))
     Log.logs.debug(args)
     config = Config(args.config)
+    config_change = threading.event
+    config_thread = threading.Thread(target=config.check_updates, args=(config_change))
+    config_thread.start()
+    twitter_search(config, config_change)
