@@ -1,8 +1,8 @@
-import ConfigParser
+import configparser
 import tweepy
 import argparse
 import json
-import MySQLdb
+import pymysql.cursors
 import logging
 import logging.config
 import datetime
@@ -17,7 +17,7 @@ class Config:
 
     def __init__(self, filename="find-tweets.cfg", logger=None):
         self.filename = filename
-        config = ConfigParser.SafeConfigParser({'mysql_port': 3306})
+        config = configparser.SafeConfigParser({'mysql_port': 3306})
         try:
             with open(filename) as f:
                 config.readfp(f)
@@ -27,51 +27,51 @@ class Config:
 
         try:
             self.consumer_token = config.get("Twitter auth", "consumer_token")
-        except ConfigParser.NoOptionError:
+        except configparser.NoOptionError:
             Log.logs.critical("Missing consumer_token in 'Twitter auth' section in config file!")
             exit()
 
         try:
             self.consumer_secret = config.get("Twitter auth", "consumer_secret")
-        except ConfigParser.NoOptionError:
+        except configparser.NoOptionError:
             Log.logs.critical("Missing consumer_secret in 'Twitter auth' section in config file!")
             exit()
 
         try:
             self.access_token = config.get("Twitter auth", "access_token")
-        except ConfigParser.NoOptionError:
+        except configparser.NoOptionError:
             Log.logs.critical("Missing access_token in 'Twitter auth' section in config file!")
             exit()
 
         try:
             self.access_token_secret = config.get("Twitter auth", "access_token_secret")
-        except ConfigParser.NoOptionError:
+        except configparser.NoOptionError:
             Log.logs.critical("Missing access_token_secret in 'Twitter auth' section in config file!")
         try:
             self.search_terms = [e.strip for e in config.get("Twitter", "search_terms").strip(",")]
-        except ConfigParser.NoOptionError:
+        except configparser.NoOptionError:
             Log.logs.critical("Missing search_terms in 'Twitter' section in config file!")
 
         try:
             self.mysql_server = config.get("mysql", "server")
-        except ConfigParser.NoOptionError:
+        except configparser.NoOptionError:
             Log.logs.critical("Missing server in 'mysql' section in config file!")
 
         self.mysql_port = config.get("mysql", "server_port")
 
         try:
             self.mysql_username = config.get("mysql", "username")
-        except ConfigParser.NoOptionError:
+        except configparser.NoOptionError:
             Log.logs.critical("Missing username in 'mysql' section in config file!")
 
         try:
             self.mysql_password = config.get("mysql", "password")
-        except ConfigParser.NoOptionError:
+        except configparser.NoOptionError:
             Log.logs.critical("Missing password in 'mysql' section in config file!")
 
         try:
             self.mysql_db_name = config.get("mysql", "db_name")
-        except ConfigParser.NoOptionError:
+        except configparser.NoOptionError:
             Log.logs.critical("Missing db_name in 'mysql' section in config file!")
 
     def check_updates(self, config_change):
@@ -93,7 +93,7 @@ class SearchStream(tweepy.StreamListener):
 
     def on_error(self, status):
         if status == "420":
-            print "420 error"
+            print("420 error")
             return False
 
 
@@ -117,18 +117,21 @@ class MySQL:
 
     def __init__(self, config):
         try:
-            self.db = mysql.connect(host=config.mysql_server, user=config.mysql_username, passwd=config.mysql_password, db=config.mysql_db_name, port=config.mysql_port)
-        except MySQLdb.Error, e:
+            self.connection = pymysql.connect(host=config.mysql_server, user=config.mysql_username, password=config.mysql_password, db=config.mysql_db_name, port=config.mysql_port, charset='utf8mb4', cursorclass=pymysql.cursors.DictCursor)
+        except pymysql.Error as e:
             log.logs.critical("MySQL: unable to open connection: {}".format(str(e)))
 
     def insert_tweet(self, username, screen_name, id, text, date):
-        cursor = self.db.cursor()
         try:
-            cursor.execute("""INSERT INTO tweets
-                       (username, screen_name, id, text, date)
-                       VALUES {1}, {2}, {3}, {4}, {5}""".format(username, screen_name, id, text, date))
-        except MySQLdb.Error, e:
+            with self.connection.cursor() as cursor:
+                cursor.execute("""INSERT INTO `tweets`
+                           (`username`, `screen_name`, `id`, `text`, `date`)
+                           VALUES ({1}, {2}, {3}, {4}, {5})""".format(username, screen_name, id, text, date))
+                connection.commit()
+        except pymysql.Error as e:
             log.logs.critical("MySQL: error inserting into the DB: {}".format(str(e)))
+        finally:
+            self.connection.close()
 
 if __name__ == "__main__":
 
@@ -139,7 +142,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     try:
         logging.config.fileConfig(args.logconfig)
-    except ConfigParser.NoSectionError:
+    except configparser.NoSectionError:
         logging.basicConfig()
         log.logs.critical("Logging config file not found: {}".format(args.logconfig))
     Log.logs.debug(args)
