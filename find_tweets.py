@@ -48,7 +48,7 @@ class Config:
         except configparser.NoOptionError:
             Log.logs.critical("Missing access_token_secret in 'Twitter auth' section in config file!")
         try:
-            self.search_terms = [e.strip for e in config.get("Twitter", "search_terms").strip(",")]
+            self.search_terms = [e.strip() for e in config.get("Twitter", "search_terms").split(",")]
         except configparser.NoOptionError:
             Log.logs.critical("Missing search_terms in 'Twitter' section in config file!")
 
@@ -98,7 +98,8 @@ class SearchStream(tweepy.StreamListener):
 
 
 def twitter_search(config, config_change):
-    listener = SearchStream()
+    db = MySQL(config)
+    listener = SearchStream(db)
     oauth = tweepy.OAuthHandler(config.consumer_token, config.consumer_secret)
     oauth.set_access_token = (config.access_token, config.access_token_secret)
     stream = tweepy.Stream(auth=auth, listener=listener)
